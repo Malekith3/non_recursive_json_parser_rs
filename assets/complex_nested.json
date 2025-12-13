@@ -1,0 +1,19 @@
+{
+  "project": "json-parser",
+  "version": 1,
+  "features": {
+    "unicode": false,
+    "streaming": false
+  },
+  "contributors": [
+    {
+      "name": "Alice",
+      "commits": 42
+    },
+    {
+      "name": "Bob",
+      "commits": 17
+    }
+  ],
+  "metadata": null
+}
