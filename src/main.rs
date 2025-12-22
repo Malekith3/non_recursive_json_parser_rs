@@ -59,5 +59,4 @@ fn main() {
         }
     };
 
-    json_parsing::process_json_file(&json_string);
 }
