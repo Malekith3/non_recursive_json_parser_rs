@@ -1,9 +1,4 @@
 use std::collections::HashMap;
-use std::ops::Add;
-
-const NULL_OFFSET: usize = b"null".len();
-const NULL_INDEX_STEP : usize = b"null".len() - 1;
-
 
 pub(crate) fn process_json_file(json_string: &str) -> Result<JsonValue, JsonParsingError>  {
 
@@ -149,6 +144,8 @@ pub enum JsonValue {
     Null,
 }
 
+
+///-----------------------TESTS-----------------------///
 #[cfg(test)]
 mod tests{
     use super::*;
