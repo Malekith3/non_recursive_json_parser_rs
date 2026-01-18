@@ -1,33 +1,33 @@
+use std::string::String;
 use std::collections::HashMap;
+use std::fs::read_to_string;
 
-pub(crate) fn process_json_file(json_string: &str) -> Result<JsonValue, JsonParsingError>  {
-
+pub(crate) fn process_json_file(json_string: &str) -> Result<JsonValue, JsonParsingError> {
     if json_string.is_empty() {
-        return Err(JsonParsingError::EmptyJsonFile)
+        return Err(JsonParsingError::EmptyJsonFile);
     }
 
-    let mut json_index : usize = 0;
+    let mut json_index: usize = 0;
 
     trim_spaces(json_string, &mut json_index);
 
-    if json_index >= json_string.len(){
-        return Err(JsonParsingError::InvalidJsonFile)
+    if json_index >= json_string.len() {
+        return Err(JsonParsingError::InvalidJsonFile);
     }
 
     let result = parse_json_value(json_string, &mut json_index);
 
     trim_spaces(json_string, &mut json_index);
 
-    if json_index != json_string.len() {
-        return Err(JsonParsingError::InvalidJsonFile)
-    }
-
     result
 }
-fn parse_json_value(json_string: &str, current_index: &mut usize) -> Result<JsonValue, JsonParsingError> {
+fn parse_json_value(
+    json_string: &str,
+    current_index: &mut usize,
+) -> Result<JsonValue, JsonParsingError> {
     trim_spaces(json_string, current_index);
 
-    if *current_index >= json_string.len(){
+    if *current_index >= json_string.len() {
         return Err(JsonParsingError::InvalidJsonFile);
     }
     let json_string_bytes = json_string.as_bytes();
@@ -35,11 +35,93 @@ fn parse_json_value(json_string: &str, current_index: &mut usize) -> Result<Json
     match json_string_bytes[*current_index] {
         b'n' => parse_null(json_string, current_index),
         b't' | b'f' => parse_bool(json_string, current_index),
-        _ => Err(JsonParsingError::InvalidJsonFile)
+        b'-' | b'0'..= b'9' => parse_number(json_string, current_index),
+        _ => Err(JsonParsingError::InvalidJsonFile),
     }
 }
 
-fn parse_null(json_string: &str, current_index: &mut usize) -> Result<JsonValue, JsonParsingError>{
+fn parse_number(json_string: &str, current_index: &mut usize) -> Result<JsonValue, JsonParsingError>{
+    let bytes = json_string.as_bytes();
+    let negative = if bytes[*current_index] == b'-' { *current_index+=1; -1.0 } else { 1.0 };
+
+    if *current_index >= bytes.len() || !bytes[*current_index].is_ascii_digit() {
+        return Err(JsonParsingError::InvalidJsonFile)
+    }
+
+    let start_index = *current_index;
+
+    let mut seen_dot = false;
+    let mut seen_exp = false;
+
+    let mut need_frac_digit = false;
+    let mut need_exp_digit = false;
+
+    let mut exp_sign_allowed = false;
+
+    while *current_index < bytes.len() {
+        let b = bytes[*current_index];
+
+        match b {
+            b'0'..=b'9' => {
+                if need_frac_digit {
+                    need_frac_digit = false;
+                }
+                if need_exp_digit {
+                    need_exp_digit = false;
+                }
+                exp_sign_allowed = false;
+                *current_index += 1;
+            }
+
+            b'.' => {
+                if seen_dot || seen_exp {
+                    return Err(JsonParsingError::InvalidJsonFile);
+                }
+                seen_dot = true;
+                need_frac_digit = true;
+                exp_sign_allowed = false;
+                *current_index += 1;
+            }
+
+            b'e' | b'E' => {
+                if seen_exp || need_frac_digit {
+                    return Err(JsonParsingError::InvalidJsonFile);
+                }
+                seen_exp = true;
+                need_exp_digit = true;     // must see digits in exponent
+                exp_sign_allowed = true;   // may accept +/-
+                *current_index += 1;
+            }
+
+            b'+' | b'-' => {
+                // '+' only valid in exponent; '-' here only valid if it's exponent sign (not leading; that's already handled)
+                if !exp_sign_allowed {
+                    return Err(JsonParsingError::InvalidJsonFile);
+                }
+                exp_sign_allowed = false; // sign can appear only once
+                *current_index += 1;
+            }
+
+            _ => break, // stop scanning the number token; delimiter check comes next
+        }
+    }
+
+    if(need_frac_digit || need_exp_digit){
+        return Err(JsonParsingError::InvalidJsonFile)
+    }
+
+    if !ensure_delimiter_or_eof(bytes,*current_index) {
+        return Err(JsonParsingError::InvalidJsonFile)
+    }
+
+    let string_number_rep = &json_string[start_index .. *current_index];
+    let num: f64 = string_number_rep.parse().map_err(|_| JsonParsingError::InvalidJsonFile)?;
+
+
+    Ok(JsonValue::Number(num * negative))
+}
+
+fn parse_null(json_string: &str, current_index: &mut usize) -> Result<JsonValue, JsonParsingError> {
     const NULL_BYTES: &[u8] = b"null";
     let bytes = json_string.as_bytes();
 
@@ -64,7 +146,7 @@ fn parse_null(json_string: &str, current_index: &mut usize) -> Result<JsonValue,
 fn is_delimiter(b: u8) -> bool {
     matches!(b, b' ' | b'\n' | b'\r' | b'\t' | b',' | b']' | b'}')
 }
-fn parse_bool(json_string: &str, current_index: &mut usize) -> Result<JsonValue, JsonParsingError>{
+fn parse_bool(json_string: &str, current_index: &mut usize) -> Result<JsonValue, JsonParsingError> {
     const TRUE_BYTES: &[u8] = b"true";
     const FALSE_BYTES: &[u8] = b"false";
     let bytes = json_string.as_bytes();
@@ -112,46 +194,43 @@ fn ensure_delimiter_or_eof(bytes: &[u8], index: usize) -> bool {
     index == bytes.len() || is_delimiter(bytes[index])
 }
 
-fn trim_spaces(json_string : &str, current_index: &mut usize){
-
+fn trim_spaces(json_string: &str, current_index: &mut usize) {
     while *current_index < json_string.len() {
         let current_char = json_string.as_bytes()[*current_index];
-    if     current_char == b' '
-        || current_char == b'\n'
-        || current_char == b'\r'
-        || current_char == b'\t' {
+        if current_char == b' '
+            || current_char == b'\n'
+            || current_char == b'\r'
+            || current_char == b'\t'
+        {
             *current_index += 1;
         } else {
             break;
         }
     }
 }
-#[derive(Debug, Clone)]
-#[derive(PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum JsonParsingError {
     EmptyJsonFile,
-    InvalidJsonFile
+    InvalidJsonFile,
 }
 
-#[derive(Debug, Clone)]
-#[derive(PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum JsonValue {
     Object(HashMap<String, JsonValue>),
     Array(Vec<JsonValue>),
-    String(String),
+    JsonString(String),
     Number(f64),
     Boolean(bool),
     Null,
 }
 
-
 ///-----------------------TESTS-----------------------///
 #[cfg(test)]
-mod tests{
+mod tests {
     use super::*;
 
     #[test]
-    fn test_process_empty_json_file(){
+    fn test_process_empty_json_file() {
         let json_string = "";
         let res = process_json_file(json_string);
         assert_eq!(res.unwrap_err(), JsonParsingError::EmptyJsonFile);
@@ -159,12 +238,7 @@ mod tests{
 
     #[test]
     fn test_invalid_inputs() {
-        let cases = [
-            "{",
-            "}",
-            "{{",
-            "[]}",
-        ];
+        let cases = ["{", "}", "{{", "[]}"];
 
         for case in cases {
             let res = process_json_file(case);
@@ -177,24 +251,23 @@ mod tests{
         }
     }
     #[test]
-    fn test_parse_null(){
+    fn test_parse_null() {
         let cases = [
             "null",
             "   null",
             "null   ",
             "\r  null",
-            "\n  \r  \t null  \n \r\t"
+            "\n  \r  \t null  \n \r\t",
         ];
 
-       for case in cases {
-           let res = process_json_file(case);
-           assert_eq!(res.unwrap(), JsonValue::Null)
-       }
-
+        for case in cases {
+            let res = process_json_file(case);
+            assert_eq!(res.unwrap(), JsonValue::Null)
+        }
     }
 
     #[test]
-    fn parse_bool_values(){
+    fn parse_bool_values() {
         let mut json_string = "true";
         let res = process_json_file(json_string);
         assert_eq!(res.unwrap(), JsonValue::Boolean(true));
@@ -204,19 +277,87 @@ mod tests{
         assert_eq!(res.unwrap(), JsonValue::Boolean(false));
     }
     #[test]
-    fn parse_typos_bool_and_null(){
+    fn parse_typos_bool_and_null() {
+        let cases = ["nullx", "truex", "falsex", "fals", "tru", "nul"];
+
+        for case in cases {
+            let res = process_json_file(case);
+            assert_eq!(
+                res.unwrap_err(),
+                JsonParsingError::InvalidJsonFile,
+                "input was: {:?}",
+                case
+            );
+        }
+    }
+
+    #[test]
+    fn parse_numbers_ok() {
         let cases = [
-            "nullx",
-            "truex",
-            "falsex",
-            "fals",
-            "tru",
-            "nul"
+            // integers
+            ("-1", JsonValue::Number(-1.0)),
+            ("1", JsonValue::Number(1.0)),
+            ("0", JsonValue::Number(0.0)),
+            ("124453", JsonValue::Number(124453.0)),
+            ("-0", JsonValue::Number(0.0)),
+            ("   42 \n", JsonValue::Number(42.0)),
+            ("   4 \n   ", JsonValue::Number(4.0)),
+
+            // fractions
+            ("1.0", JsonValue::Number(1.0)),
+            ("0.435", JsonValue::Number(0.435)),
+            ("-12.5", JsonValue::Number(-12.5)),
+
+            // exponent
+            ("1e3", JsonValue::Number(1000.0)),
+            ("1E3", JsonValue::Number(1000.0)),
+            ("1e-3", JsonValue::Number(0.001)),
+            ("1e+3", JsonValue::Number(1000.0)),
+            ("1.2e3", JsonValue::Number(1200.0)),
+            ("-1.2E3", JsonValue::Number(-1200.0)),
+        ];
+
+        for (case, expected) in cases {
+            let res = process_json_file(case);
+            assert_eq!(res.unwrap(), expected, "input was: {:?}", case);
+        }
+    }
+
+    #[test]
+    fn parse_numbers_fail() {
+        let cases = [
+            "-",      // sign with no digits
+            "-x",     // sign then junk
+            "1x",     // junk after digits
+            "--1",    // malformed sign (second '-' not allowed here)
+
+            "1.",     // dot must be followed by a digit
+            "1.e2",   // dot must be followed by a digit
+            ".1",     // number must start with digit (after optional '-')
+            "-.1",    // same
+
+            "1e",     // exponent must have digits
+            "1E",     // exponent must have digits
+            "1e+",    // exponent sign must be followed by digits
+            "1e-",    // exponent sign must be followed by digits
+            "1e+x",   // junk after exponent sign
+            "1ex",    // junk after exponent marker
+
+            "1..2",   // second dot not allowed
+            "1e2e3",  // second exponent not allowed
+            "1e2.3",  // dot not allowed after exponent
+
+            "+1",     // leading '+' not allowed by your parser (and JSON)
         ];
 
         for case in cases {
             let res = process_json_file(case);
-            assert_eq!(res.unwrap_err(), JsonParsingError::InvalidJsonFile , "input was: {:?}", case);
+            assert_eq!(
+                res.unwrap_err(),
+                JsonParsingError::InvalidJsonFile,
+                "input was: {:?}",
+                case
+            );
         }
     }
 }
