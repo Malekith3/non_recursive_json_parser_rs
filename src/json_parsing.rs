@@ -2,6 +2,7 @@ use std::string::String;
 use std::collections::HashMap;
 use std::env::current_exe;
 use std::fs::read_to_string;
+use std::str::from_utf8;
 
 pub(crate) fn process_json_file(json_string: &str) -> Result<JsonValue, JsonParsingError> {
     if json_string.is_empty() {
@@ -42,45 +43,91 @@ fn parse_json_value(
 
 }
 
+
+fn consume_escape_char(bytes_stream: &[u8], current_index: &mut usize) -> Result<([u8; 4], usize),JsonParsingError>{
+    //check if we have scape char even if it double the work
+    if *current_index >= bytes_stream.len() || bytes_stream[*current_index] != b'\\' {
+        return Err(JsonParsingError::InvalidJsonFile);
+    }
+
+    //consume escape char
+    *current_index+=1;
+
+    // Need one more byte for the escape kind
+    if *current_index >= bytes_stream.len() {
+        return Err(JsonParsingError::InvalidJsonFile);
+    }
+
+    let mut out = [0u8; 4];
+
+    let n = match bytes_stream[*current_index] {
+        b'"'  => { out[0] = b'"'; 1 }
+        b'\\' => { out[0] = b'\\'; 1 }
+        b'/'  => { out[0] = b'/'; 1 }
+        b'b'  => { out[0] = 0x08; 1 }
+        b'f'  => { out[0] = 0x0C; 1 }
+        b'n'  => { out[0] = b'\n'; 1 }
+        b'r'  => { out[0] = b'\r'; 1 }
+        b't'  => { out[0] = b'\t'; 1 }
+        // TODO need to add handling unicodes
+        _ => return Err(JsonParsingError::InvalidJsonFile),
+    };
+
+    *current_index += 1;
+    Ok((out, n))
+
+}
+
 fn parse_string(json_string: &str, current_index: &mut usize) -> Result<JsonValue, JsonParsingError>{
 
     let bytes = json_string.as_bytes();
-    *current_index +=1;
-    let string_starts = *current_index;
-    let mut string_ends = *current_index;
+
+    // Must start on opening quote
+    if *current_index >= bytes.len() || bytes[*current_index] != b'"' {
+        return Err(JsonParsingError::InvalidJsonFile);
+    }
+    *current_index += 1;
+
+    let mut out: Vec<u8> = Vec::new();
+    let mut run_start = *current_index;
+    let mut closed = false;
+
 
     while *current_index < bytes.len() {
-        let b = bytes[*current_index];
+        match bytes[*current_index] {
+            b'\\' => {
+                out.extend_from_slice(&bytes[run_start..*current_index]);
 
-        match b {
-            b'\\'  => {
-                return Err(JsonParsingError::InvalidJsonFile);
+                let (buf, n) = consume_escape_char(bytes, current_index)?;
+                out.extend_from_slice(&buf[..n]);
+
+                run_start = *current_index;
             }
 
-            b'\"' =>{
-                string_ends = *current_index;
+            b'"' => {
+                out.extend_from_slice(&bytes[run_start..*current_index]);
+
                 *current_index += 1;
+                closed = true;
                 break;
             }
+
             _ => {
                 *current_index += 1;
             }
         }
     }
 
-    if(string_ends == string_starts){
-        return Err(JsonParsingError::InvalidJsonFile)
+    if !closed {
+        return Err(JsonParsingError::InvalidJsonFile);
     }
 
-    if !ensure_delimiter_or_eof(bytes,*current_index) {
-        return Err(JsonParsingError::InvalidJsonFile)
+    if !ensure_delimiter_or_eof(bytes, *current_index) {
+        return Err(JsonParsingError::InvalidJsonFile);
     }
 
-    let raw_bytes_string = &bytes[string_starts .. string_ends];
-    let parsed_string = std::str::from_utf8(raw_bytes_string)
-        .map_err(|_| JsonParsingError::InvalidJsonFile)?
-        .to_owned();
-    Ok(JsonValue::JsonString(parsed_string))
+    let s = from_utf8(&out).map_err(|_| JsonParsingError::InvalidJsonFile)?.to_owned();
+    Ok(JsonValue::JsonString(s))
 }
 
 fn parse_number(json_string: &str, current_index: &mut usize) -> Result<JsonValue, JsonParsingError>{
@@ -275,11 +322,15 @@ pub enum JsonValue {
     Null,
 }
 
+
 ///-----------------------TESTS-----------------------///
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    fn char_from_hex(s: &str) -> Option<char> {
+        let hex = s.trim_start_matches("0x");
+        u32::from_str_radix(hex, 16).ok().and_then(char::from_u32)
+    }
     #[test]
     fn test_process_empty_json_file() {
         let json_string = "";
@@ -449,12 +500,29 @@ mod tests {
     #[test]
     fn escape_string() {
         let cases = [
-            (r#"\u00E9"#, JsonParsingError::InvalidJsonFile)
+            // quote
+            (r#"" \" \" ""#, JsonValue::JsonString(r#" " " "#.to_string())),
+            (r#"" \" jdfjgkh \" djkdsjfkfjg ""#, JsonValue::JsonString(r#" " jdfjgkh " djkdsjfkfjg "#.to_string())),
+
+            // backslash
+            (r#"" \\ ""#, JsonValue::JsonString(r#" \ "#.to_string())),
+            (r#"" path\\to\\file ""#, JsonValue::JsonString(r#" path\to\file "#.to_string())),
+
+            // slash
+            (r#"" \/ ""#, JsonValue::JsonString(" / ".to_string())),
+
+            // control escapes
+            (r#"" \n \r \t ""#, JsonValue::JsonString(" \n \r \t ".to_string())),
+            (r#"" \b \f ""#, JsonValue::JsonString(format!(" {} {} ", '\u{0008}', '\u{000C}'))),
+
+            // mixed
+            (r#"" a\\b\"c\/d ""#, JsonValue::JsonString(r#" a\b"c/d "#.to_string())),
         ];
 
         for (case, expected) in cases {
-            let res = process_json_file(case);
-            assert_eq!(res.unwrap_err(), expected, "input was: {:?}", case);
+            let value = process_json_file(case)
+                .unwrap_or_else(|e| panic!("unexpected error for input {:?}: {:?}", case, e));
+            assert_eq!(value, expected, "input was: {:?}", case);
         }
     }
 }
