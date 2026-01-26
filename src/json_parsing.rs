@@ -112,6 +112,8 @@ fn parse_string(json_string: &str, current_index: &mut usize) -> Result<JsonValu
                 break;
             }
 
+            // JSON: forbid raw control chars inside strings
+            0x00..=0x1F => return Err(JsonParsingError::InvalidJsonFile),
             _ => {
                 *current_index += 1;
             }
@@ -435,19 +437,19 @@ mod tests {
             "1x",     // junk after digits
             "--1",    // malformed sign (second '-' not allowed here)
 
-            "1.",     // dot must be followed by a digit
-            "1.e2",   // dot must be followed by a digit
-            ".1",     // number must start with digit (after optional '-')
+            "1.",     // a digit must follow a dot
+            "1.e2",   // a digit must follow a dot
+            ".1",     // the number must start with a digit (after optional '-')
             "-.1",    // same
 
             "1e",     // exponent must have digits
             "1E",     // exponent must have digits
-            "1e+",    // exponent sign must be followed by digits
-            "1e-",    // exponent sign must be followed by digits
+            "1e+",    // digits must follow the exponent sign
+            "1e-",    // digits must follow the exponent sign
             "1e+x",   // junk after exponent sign
             "1ex",    // junk after exponent marker
 
-            "1..2",   // second dot not allowed
+            "1..2",   // second dot isn't allowed
             "1e2e3",  // second exponent not allowed
             "1e2.3",  // dot not allowed after exponent
 
@@ -523,6 +525,29 @@ mod tests {
             let value = process_json_file(case)
                 .unwrap_or_else(|e| panic!("unexpected error for input {:?}: {:?}", case, e));
             assert_eq!(value, expected, "input was: {:?}", case);
+        }
+    }
+
+    #[test]
+    fn escape_string_fail() {
+        let cases = [
+            r#""\q""#,        // invalid escape
+            r#""\""#,         // unterminated: ends right after an escape quote start
+            r#""\\ \""#,        // unterminated: backslash escapes closing quote, no final quote
+            "\"\n\"",         // raw newline inside string (not escaped)
+            "\"\r\"",         // raw CR inside string (not escaped)
+            "\"\t\"",         // raw tab inside string (not escaped) -- strict JSON forbids raw control chars
+            r#""\u1234""#,    // unicode not supported yet (if you currently error on \u)
+        ];
+
+        for case in cases {
+            let res = process_json_file(case);
+            assert_eq!(
+                res.unwrap_err(),
+                JsonParsingError::InvalidJsonFile,
+                "input was: {:?}",
+                case
+            );
         }
     }
 }
