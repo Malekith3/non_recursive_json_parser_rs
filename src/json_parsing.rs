@@ -1,8 +1,11 @@
-use std::string::String;
 use std::collections::HashMap;
-use std::env::current_exe;
-use std::fs::read_to_string;
 use std::str::from_utf8;
+use std::string::String;
+
+
+const HEX_ASCI_OFFSET_CAP: u8 = 0x41;
+const HEX_ASCI_OFFSET_LOW: u8 = 0x61;
+const HEX_ASCI_OFFSET_NUM: u8 = 0x30;
 
 pub(crate) fn process_json_file(json_string: &str) -> Result<JsonValue, JsonParsingError> {
     if json_string.is_empty() {
@@ -36,22 +39,72 @@ fn parse_json_value(
     match json_string_bytes[*current_index] {
         b'n' => parse_null(json_string, current_index),
         b't' | b'f' => parse_bool(json_string, current_index),
-        b'-' | b'0'..= b'9' => parse_number(json_string, current_index),
+        b'-' | b'0'..=b'9' => parse_number(json_string, current_index),
         b'\"' => parse_string(json_string, current_index),
         _ => Err(JsonParsingError::InvalidJsonFile),
     }
-
 }
 
+fn consume_unicode(bytes_stream: &[u8],
+                   current_index: &mut usize,
+) -> Result<([u8; 4], usize), JsonParsingError> {
 
-fn consume_escape_char(bytes_stream: &[u8], current_index: &mut usize) -> Result<([u8; 4], usize),JsonParsingError>{
+    // Move after seen u separator
+    *current_index += 1;
+
+    let mut out_buffer = [0u8; 4];
+
+    // Gather
+    for i in 0..4 {
+        if (*current_index >= bytes_stream.len()) {
+            return Err(JsonParsingError::InvalidUnicodeInString);
+        }
+
+        match bytes_stream[*current_index] {
+            b'0'..=b'9' => {
+                out_buffer[i] = bytes_stream[*current_index] - HEX_ASCI_OFFSET_NUM;
+            }
+            b'A'..=b'F' => {
+                out_buffer[i] = bytes_stream[*current_index] - HEX_ASCI_OFFSET_CAP + 0xA
+            }
+            b'a'..=b'f' => {
+                out_buffer[i] = bytes_stream[*current_index] - HEX_ASCI_OFFSET_LOW + 0xA
+            }
+
+            _ => { return Err(JsonParsingError::InvalidUnicodeInString) }
+        }
+        *current_index += 1;
+    }
+
+    let code: u32 =
+        ((out_buffer[0] as u32) << 12) |
+        ((out_buffer[1] as u32) << 8)  |
+        ((out_buffer[2] as u32) << 4)  |
+        ((out_buffer[3] as u32) << 0);
+
+    if code >= 0xD800 && code <= 0xDFFF {
+        return Err(JsonParsingError::InvalidUnicodeInString);
+    }
+
+    let  unicode_char  = char::from_u32(code).ok_or(JsonParsingError::InvalidUnicodeInString)?;
+
+    let mut buf = [0u8; 4];
+    let len = unicode_char.encode_utf8(&mut buf).len();
+
+    Ok((buf,len))
+}
+
+fn consume_escape_char(
+    bytes_stream: &[u8],
+    current_index: &mut usize,
+) -> Result<([u8; 4], usize), JsonParsingError> {
     //check if we have scape char even if it double the work
     if *current_index >= bytes_stream.len() || bytes_stream[*current_index] != b'\\' {
         return Err(JsonParsingError::InvalidJsonFile);
     }
 
     //consume escape char
-    *current_index+=1;
+    *current_index += 1;
 
     // Need one more byte for the escape kind
     if *current_index >= bytes_stream.len() {
@@ -59,27 +112,45 @@ fn consume_escape_char(bytes_stream: &[u8], current_index: &mut usize) -> Result
     }
 
     let mut out = [0u8; 4];
-
-    let n = match bytes_stream[*current_index] {
-        b'"'  => { out[0] = b'"'; 1 }
-        b'\\' => { out[0] = b'\\'; 1 }
-        b'/'  => { out[0] = b'/'; 1 }
-        b'b'  => { out[0] = 0x08; 1 }
-        b'f'  => { out[0] = 0x0C; 1 }
-        b'n'  => { out[0] = b'\n'; 1 }
-        b'r'  => { out[0] = b'\r'; 1 }
-        b't'  => { out[0] = b'\t'; 1 }
-        // TODO need to add handling unicodes
+    match bytes_stream[*current_index] {
+        b'"' => {
+            out[0] = b'"';
+        }
+        b'\\' => {
+            out[0] = b'\\';
+        }
+        b'/' => {
+            out[0] = b'/';
+        }
+        b'b' => {
+            out[0] = 0x08;
+        }
+        b'f' => {
+            out[0] = 0x0C;
+        }
+        b'n' => {
+            out[0] = b'\n';
+        }
+        b'r' => {
+            out[0] = b'\r';
+        }
+        b't' => {
+            out[0] = b'\t';
+        }
+        b'u' => {
+             return consume_unicode(bytes_stream, current_index);
+        }
         _ => return Err(JsonParsingError::InvalidJsonFile),
     };
 
     *current_index += 1;
-    Ok((out, n))
-
+    Ok((out, 1))
 }
 
-fn parse_string(json_string: &str, current_index: &mut usize) -> Result<JsonValue, JsonParsingError>{
-
+fn parse_string(
+    json_string: &str,
+    current_index: &mut usize,
+) -> Result<JsonValue, JsonParsingError> {
     let bytes = json_string.as_bytes();
 
     // Must start on opening quote
@@ -91,7 +162,6 @@ fn parse_string(json_string: &str, current_index: &mut usize) -> Result<JsonValu
     let mut out: Vec<u8> = Vec::new();
     let mut run_start = *current_index;
     let mut closed = false;
-
 
     while *current_index < bytes.len() {
         match bytes[*current_index] {
@@ -128,22 +198,32 @@ fn parse_string(json_string: &str, current_index: &mut usize) -> Result<JsonValu
         return Err(JsonParsingError::InvalidJsonFile);
     }
 
-    let s = from_utf8(&out).map_err(|_| JsonParsingError::InvalidJsonFile)?.to_owned();
+    let s = from_utf8(&out)
+        .map_err(|_| JsonParsingError::InvalidJsonFile)?
+        .to_owned();
     Ok(JsonValue::JsonString(s))
 }
 
-fn parse_number(json_string: &str, current_index: &mut usize) -> Result<JsonValue, JsonParsingError>{
+fn parse_number(
+    json_string: &str,
+    current_index: &mut usize,
+) -> Result<JsonValue, JsonParsingError> {
     let bytes = json_string.as_bytes();
-    let negative = if bytes[*current_index] == b'-' { *current_index+=1; -1.0 } else { 1.0 };
+    let negative = if bytes[*current_index] == b'-' {
+        *current_index += 1;
+        -1.0
+    } else {
+        1.0
+    };
 
     if *current_index >= bytes.len() || !bytes[*current_index].is_ascii_digit() {
-        return Err(JsonParsingError::InvalidJsonFile)
+        return Err(JsonParsingError::InvalidJsonFile);
     }
 
     if bytes[*current_index] == b'0' {
         let next = *current_index + 1;
         if next < bytes.len() && bytes[next].is_ascii_digit() {
-            return Err(JsonParsingError::LeadingZero)
+            return Err(JsonParsingError::LeadingZero);
         }
     }
 
@@ -187,8 +267,8 @@ fn parse_number(json_string: &str, current_index: &mut usize) -> Result<JsonValu
                     return Err(JsonParsingError::InvalidJsonFile);
                 }
                 seen_exp = true;
-                need_exp_digit = true;     // must see digits in exponent
-                exp_sign_allowed = true;   // may accept +/-
+                need_exp_digit = true; // must see digits in exponent
+                exp_sign_allowed = true; // may accept +/-
                 *current_index += 1;
             }
 
@@ -205,17 +285,18 @@ fn parse_number(json_string: &str, current_index: &mut usize) -> Result<JsonValu
         }
     }
 
-    if(need_frac_digit || need_exp_digit){
-        return Err(JsonParsingError::InvalidJsonFile)
+    if (need_frac_digit || need_exp_digit) {
+        return Err(JsonParsingError::InvalidJsonFile);
     }
 
-    if !ensure_delimiter_or_eof(bytes,*current_index) {
-        return Err(JsonParsingError::InvalidJsonFile)
+    if !ensure_delimiter_or_eof(bytes, *current_index) {
+        return Err(JsonParsingError::InvalidJsonFile);
     }
 
-    let string_number_rep = &json_string[start_index .. *current_index];
-    let num: f64 = string_number_rep.parse().map_err(|_| JsonParsingError::InvalidJsonFile)?;
-
+    let string_number_rep = &json_string[start_index..*current_index];
+    let num: f64 = string_number_rep
+        .parse()
+        .map_err(|_| JsonParsingError::InvalidJsonFile)?;
 
     Ok(JsonValue::Number(num * negative))
 }
@@ -311,7 +392,8 @@ fn trim_spaces(json_string: &str, current_index: &mut usize) {
 enum JsonParsingError {
     EmptyJsonFile,
     InvalidJsonFile,
-    LeadingZero
+    LeadingZero,
+    InvalidUnicodeInString,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -323,7 +405,6 @@ pub enum JsonValue {
     Boolean(bool),
     Null,
 }
-
 
 ///-----------------------TESTS-----------------------///
 #[cfg(test)]
@@ -407,12 +488,10 @@ mod tests {
             ("   42 \n", JsonValue::Number(42.0)),
             ("   4 \n   ", JsonValue::Number(4.0)),
             ("0.00000e+00000", JsonValue::Number(0.0)),
-
             // fractions
             ("1.0", JsonValue::Number(1.0)),
             ("0.435", JsonValue::Number(0.435)),
             ("-12.5", JsonValue::Number(-12.5)),
-
             // exponent
             ("1e3", JsonValue::Number(1000.0)),
             ("1E3", JsonValue::Number(1000.0)),
@@ -420,7 +499,7 @@ mod tests {
             ("1e+3", JsonValue::Number(1000.0)),
             ("1.2e3", JsonValue::Number(1200.0)),
             ("-1.2E3", JsonValue::Number(-1200.0)),
-            ("-1.2e00000003", JsonValue::Number(-1200.0))
+            ("-1.2e00000003", JsonValue::Number(-1200.0)),
         ];
 
         for (case, expected) in cases {
@@ -432,28 +511,24 @@ mod tests {
     #[test]
     fn parse_numbers_fail() {
         let cases = [
-            "-",      // sign with no digits
-            "-x",     // sign then junk
-            "1x",     // junk after digits
-            "--1",    // malformed sign (second '-' not allowed here)
-
-            "1.",     // a digit must follow a dot
-            "1.e2",   // a digit must follow a dot
-            ".1",     // the number must start with a digit (after optional '-')
-            "-.1",    // same
-
-            "1e",     // exponent must have digits
-            "1E",     // exponent must have digits
-            "1e+",    // digits must follow the exponent sign
-            "1e-",    // digits must follow the exponent sign
-            "1e+x",   // junk after exponent sign
-            "1ex",    // junk after exponent marker
-
-            "1..2",   // second dot isn't allowed
-            "1e2e3",  // second exponent not allowed
-            "1e2.3",  // dot not allowed after exponent
-
-            "+1",     // leading '+' not allowed by your parser (and JSON)
+            "-",   // sign with no digits
+            "-x",  // sign then junk
+            "1x",  // junk after digits
+            "--1", // malformed sign (second '-' not allowed here)
+            "1.",  // a digit must follow a dot
+            "1.e2", // a digit must follow a dot
+            ".1",  // the number must start with a digit (after optional '-')
+            "-.1", // same
+            "1e",  // exponent must have digits
+            "1E",  // exponent must have digits
+            "1e+", // digits must follow the exponent sign
+            "1e-", // digits must follow the exponent sign
+            "1e+x", // junk after exponent sign
+            "1ex", // junk after exponent marker
+            "1..2", // second dot isn't allowed
+            "1e2e3", // second exponent not allowed
+            "1e2.3", // dot not allowed after exponent
+            "+1",  // leading '+' not allowed by your parser (and JSON)
         ];
 
         for case in cases {
@@ -467,11 +542,8 @@ mod tests {
         }
     }
     #[test]
-    fn leading_zero_fail(){
-        let cases = [
-            "00",
-            "00000"
-        ];
+    fn leading_zero_fail() {
+        let cases = ["00", "00000"];
 
         for case in cases {
             let res = process_json_file(case);
@@ -485,12 +557,11 @@ mod tests {
     }
 
     #[test]
-    fn simple_strinng(){
+    fn simple_strinng() {
         let cases = [
             (r#""hello""#, JsonValue::JsonString("hello".to_string())),
             (r#""hé""#, JsonValue::JsonString("hé".to_string())),
             (r#""1033""#, JsonValue::JsonString("1033".to_string())),
-
         ];
 
         for (case, expected) in cases {
@@ -503,22 +574,36 @@ mod tests {
     fn escape_string() {
         let cases = [
             // quote
-            (r#"" \" \" ""#, JsonValue::JsonString(r#" " " "#.to_string())),
-            (r#"" \" jdfjgkh \" djkdsjfkfjg ""#, JsonValue::JsonString(r#" " jdfjgkh " djkdsjfkfjg "#.to_string())),
-
+            (
+                r#"" \" \" ""#,
+                JsonValue::JsonString(r#" " " "#.to_string()),
+            ),
+            (
+                r#"" \" jdfjgkh \" djkdsjfkfjg ""#,
+                JsonValue::JsonString(r#" " jdfjgkh " djkdsjfkfjg "#.to_string()),
+            ),
             // backslash
             (r#"" \\ ""#, JsonValue::JsonString(r#" \ "#.to_string())),
-            (r#"" path\\to\\file ""#, JsonValue::JsonString(r#" path\to\file "#.to_string())),
-
+            (
+                r#"" path\\to\\file ""#,
+                JsonValue::JsonString(r#" path\to\file "#.to_string()),
+            ),
             // slash
             (r#"" \/ ""#, JsonValue::JsonString(" / ".to_string())),
-
             // control escapes
-            (r#"" \n \r \t ""#, JsonValue::JsonString(" \n \r \t ".to_string())),
-            (r#"" \b \f ""#, JsonValue::JsonString(format!(" {} {} ", '\u{0008}', '\u{000C}'))),
-
+            (
+                r#"" \n \r \t ""#,
+                JsonValue::JsonString(" \n \r \t ".to_string()),
+            ),
+            (
+                r#"" \b \f ""#,
+                JsonValue::JsonString(format!(" {} {} ", '\u{0008}', '\u{000C}')),
+            ),
             // mixed
-            (r#"" a\\b\"c\/d ""#, JsonValue::JsonString(r#" a\b"c/d "#.to_string())),
+            (
+                r#"" a\\b\"c\/d ""#,
+                JsonValue::JsonString(r#" a\b"c/d "#.to_string()),
+            ),
         ];
 
         for (case, expected) in cases {
@@ -531,13 +616,12 @@ mod tests {
     #[test]
     fn escape_string_fail() {
         let cases = [
-            r#""\q""#,        // invalid escape
-            r#""\""#,         // unterminated: ends right after an escape quote start
-            r#""\\ \""#,        // unterminated: backslash escapes closing quote, no final quote
-            "\"\n\"",         // raw newline inside string (not escaped)
-            "\"\r\"",         // raw CR inside string (not escaped)
-            "\"\t\"",         // raw tab inside string (not escaped) -- strict JSON forbids raw control chars
-            r#""\u1234""#,    // unicode not supported yet (if you currently error on \u)
+            r#""\q""#,     // invalid escape
+            r#""\""#,      // unterminated: ends right after an escape quote start
+            r#""\\ \""#,   // unterminated: backslash escapes closing quote, no final quote
+            "\"\n\"",      // raw newline inside string (not escaped)
+            "\"\r\"",      // raw CR inside string (not escaped)
+            "\"\t\""  // raw tab inside string (not escaped) -- strict JSON forbids raw control chars
         ];
 
         for case in cases {
@@ -547,6 +631,91 @@ mod tests {
                 JsonParsingError::InvalidJsonFile,
                 "input was: {:?}",
                 case
+            );
+        }
+    }
+
+    #[test]
+    fn unicode_escape_ok() {
+        let cases = [
+            (r#""\u0041""#, JsonValue::JsonString("A".to_string())), // A
+            (r#""\u0061""#, JsonValue::JsonString("a".to_string())), // a
+            (r#""\u03B1""#, JsonValue::JsonString("α".to_string())), // Greek alpha
+            (r#""x\u0041y""#, JsonValue::JsonString("xAy".to_string())), // mixed
+        ];
+
+        for (case, expected) in cases {
+            let value = process_json_file(case)
+                .unwrap_or_else(|e| panic!("unexpected error for input {:?}: {:?}", case, e));
+            assert_eq!(value, expected, "input was: {:?}", case);
+        }
+    }
+
+    #[test]
+    fn unicode_escape_fail() {
+        let cases = [
+            r#""\u""#,        // no digits
+            r#""\u0""#,       // too short
+            r#""\u000""#,     // too short
+            r#""\u12G4""#,    // non-hex
+            r#""\uD800""#,    // surrogate range (high)
+            r#""\uDFFF""#,    // surrogate range (low)
+            r#""\uDE00""#,    // surrogate range (low)
+        ];
+
+        for case in cases {
+            let res = process_json_file(case);
+            assert_eq!(
+                res.unwrap_err(),
+                JsonParsingError::InvalidUnicodeInString,
+                "input was: {:?}",
+                case
+            );
+        }
+    }
+
+    #[test]
+    fn unicode_escape_multiple_in_one_string_ok() {
+        let cases = [
+            // A B C
+            (
+                r#""\u0041\u0042\u0043""#,
+                JsonValue::JsonString("ABC".to_string()),
+            ),
+            // x A y α z
+            (
+                r#""x\u0041y\u03B1z""#,
+                JsonValue::JsonString("xAyαz".to_string()),
+            ),
+            // a-b-c with hyphens
+            (
+                r#""\u0061-\u0062-\u0063""#,
+                JsonValue::JsonString("a-b-c".to_string()),
+            ),
+        ];
+
+        for (case, expected) in cases {
+            let value = process_json_file(case)
+                .unwrap_or_else(|e| panic!("unexpected error for input {:?}: {:?}", case, e));
+            assert_eq!(value, expected, "input was: {:?}", case);
+        }
+    }
+
+    #[test]
+    fn unicode_escape_multiple_in_one_string_fail() {
+        let cases = [
+            r#""\u0041\u12G4\u0043""#, // bad hex in the middle
+            r#""\u0041\uD800\u0043""#, // surrogate in the middle (your v1 rule: error)
+            r#""\u0041\u0042\u000""#,  // truncated at end
+        ];
+
+        for case in cases {
+            let res = process_json_file(case);
+            assert!(
+                matches!(res, Err(JsonParsingError::InvalidUnicodeInString) | Err(JsonParsingError::InvalidJsonFile)),
+                "input was: {:?}, got: {:?}",
+                case,
+                res
             );
         }
     }
