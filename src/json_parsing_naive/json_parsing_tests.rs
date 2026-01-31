@@ -5,26 +5,24 @@ fn char_from_hex(s: &str) -> Option<char> {
     u32::from_str_radix(hex, 16).ok().and_then(char::from_u32)
 }
 
-#[test]
-fn test_process_empty_json_file() {
-    let json_string = "";
-    let res = process_json_file(json_string);
-    assert_eq!(res.unwrap_err(), JsonParsingError::EmptyJsonFile);
+fn assert_ok_eq(input: &str, expected: JsonValue) {
+    match process_json_string(input) {
+        Ok(value) => assert_eq!(value, expected, "input was: {:?}", input),
+        Err(err) => panic!("expected Ok, got Err: {:?} for input: {:?}", err, input),
+    }
+}
+
+fn assert_err_eq(input: &str, expected: JsonParsingError) {
+    match process_json_string(input) {
+        Ok(value) => panic!("expected Err {:?}, got Ok: {:?} for input: {:?}", expected, value, input),
+        Err(err) => assert_eq!(err, expected, "input was: {:?}, got: {:?}", input, err),
+    }
 }
 
 #[test]
-fn test_invalid_inputs() {
-    let cases = ["{", "}", "{{", "[]}"];
-
-    for case in cases {
-        let res = process_json_file(case);
-        assert_eq!(
-            res.unwrap_err(),
-            JsonParsingError::InvalidJsonFile,
-            "input was: {:?}",
-            case
-        );
-    }
+fn test_process_empty_json_file() {
+    let json_string = "";
+    assert_err_eq(json_string, JsonParsingError::EmptyJsonFile);
 }
 
 #[test]
@@ -38,20 +36,17 @@ fn test_parse_null() {
     ];
 
     for case in cases {
-        let res = process_json_file(case);
-        assert_eq!(res.unwrap(), JsonValue::Null)
+        assert_ok_eq(case, JsonValue::Null);
     }
 }
 
 #[test]
 fn parse_bool_values() {
     let mut json_string = "true";
-    let res = process_json_file(json_string);
-    assert_eq!(res.unwrap(), JsonValue::Boolean(true));
+    assert_ok_eq(json_string, JsonValue::Boolean(true));
 
     json_string = "false";
-    let res = process_json_file(json_string);
-    assert_eq!(res.unwrap(), JsonValue::Boolean(false));
+    assert_ok_eq(json_string, JsonValue::Boolean(false));
 }
 
 #[test]
@@ -59,13 +54,7 @@ fn parse_typos_bool_and_null() {
     let cases = ["nullx", "truex", "falsex", "fals", "tru", "nul"];
 
     for case in cases {
-        let res = process_json_file(case);
-        assert_eq!(
-            res.unwrap_err(),
-            JsonParsingError::InvalidJsonFile,
-            "input was: {:?}",
-            case
-        );
+        assert_err_eq(case, JsonParsingError::InvalidJsonFile);
     }
 }
 
@@ -96,8 +85,7 @@ fn parse_numbers_ok() {
     ];
 
     for (case, expected) in cases {
-        let res = process_json_file(case);
-        assert_eq!(res.unwrap(), expected, "input was: {:?}", case);
+        assert_ok_eq(case, expected);
     }
 }
 
@@ -125,13 +113,7 @@ fn parse_numbers_fail() {
     ];
 
     for case in cases {
-        let res = process_json_file(case);
-        assert_eq!(
-            res.unwrap_err(),
-            JsonParsingError::InvalidJsonFile,
-            "input was: {:?}",
-            case
-        );
+        assert_err_eq(case, JsonParsingError::InvalidJsonFile);
     }
 }
 
@@ -140,13 +122,7 @@ fn leading_zero_fail() {
     let cases = ["00", "00000"];
 
     for case in cases {
-        let res = process_json_file(case);
-        assert_eq!(
-            res.unwrap_err(),
-            JsonParsingError::LeadingZero,
-            "input was: {:?}",
-            case
-        );
+        assert_err_eq(case, JsonParsingError::LeadingZero);
     }
 }
 
@@ -159,8 +135,7 @@ fn simple_strinng() {
     ];
 
     for (case, expected) in cases {
-        let res = process_json_file(case);
-        assert_eq!(res.unwrap(), expected, "input was: {:?}", case);
+        assert_ok_eq(case, expected);
     }
 }
 
@@ -201,9 +176,7 @@ fn escape_string() {
     ];
 
     for (case, expected) in cases {
-        let value = process_json_file(case)
-            .unwrap_or_else(|e| panic!("unexpected error for input {:?}: {:?}", case, e));
-        assert_eq!(value, expected, "input was: {:?}", case);
+        assert_ok_eq(case, expected);
     }
 }
 
@@ -219,13 +192,7 @@ fn escape_string_fail() {
     ];
 
     for case in cases {
-        let res = process_json_file(case);
-        assert_eq!(
-            res.unwrap_err(),
-            JsonParsingError::InvalidJsonFile,
-            "input was: {:?}",
-            case
-        );
+        assert_err_eq(case, JsonParsingError::InvalidJsonFile);
     }
 }
 
@@ -239,9 +206,7 @@ fn unicode_escape_ok() {
     ];
 
     for (case, expected) in cases {
-        let value = process_json_file(case)
-            .unwrap_or_else(|e| panic!("unexpected error for input {:?}: {:?}", case, e));
-        assert_eq!(value, expected, "input was: {:?}", case);
+        assert_ok_eq(case, expected);
     }
 }
 
@@ -258,13 +223,7 @@ fn unicode_escape_fail() {
     ];
 
     for case in cases {
-        let res = process_json_file(case);
-        assert_eq!(
-            res.unwrap_err(),
-            JsonParsingError::InvalidUnicodeInString,
-            "input was: {:?}",
-            case
-        );
+        assert_err_eq(case, JsonParsingError::InvalidUnicodeInString);
     }
 }
 
@@ -289,9 +248,7 @@ fn unicode_escape_multiple_in_one_string_ok() {
     ];
 
     for (case, expected) in cases {
-        let value = process_json_file(case)
-            .unwrap_or_else(|e| panic!("unexpected error for input {:?}: {:?}", case, e));
-        assert_eq!(value, expected, "input was: {:?}", case);
+        assert_ok_eq(case, expected);
     }
 }
 
@@ -304,7 +261,7 @@ fn unicode_escape_multiple_in_one_string_fail() {
     ];
 
     for case in cases {
-        let res = process_json_file(case);
+        let res = process_json_string(case);
         assert!(
             matches!(
                 res,
@@ -357,8 +314,7 @@ fn simple_arrays() {
     ];
 
     for (case, expected) in cases {
-        let res = process_json_file(case);
-        assert_eq!(res.unwrap(), expected, "input was: {:?}", case);
+        assert_ok_eq(case, expected);
     }
 
 }
@@ -380,9 +336,83 @@ fn arrays_malformed_should_fail() {
     ];
 
     for case in cases {
-        let res = process_json_file(case);
+        let res = process_json_string(case);
         assert!(
             matches!(res, Err(JsonParsingError::InvalidArray) | Err(JsonParsingError::InvalidJsonFile)),
+            "input was: {:?}, got: {:?}",
+            case,
+            res
+        );
+    }
+}
+
+#[test]
+fn object_simple_ok() {
+    use indexmap::IndexMap;
+
+    // {}
+    let expected_empty = JsonValue::Object(IndexMap::new());
+
+    // {"a":1}
+    let mut m1 = IndexMap::new();
+    m1.insert("a".to_string(), JsonValue::Number(1.0));
+    let expected_one = JsonValue::Object(m1);
+
+    // {"a":1,"b":true,"c":null,"d":"hé","e":[1,2]}
+    let mut m2 = IndexMap::new();
+    m2.insert("a".to_string(), JsonValue::Number(1.0));
+    m2.insert("b".to_string(), JsonValue::Boolean(true));
+    m2.insert("c".to_string(), JsonValue::Null);
+    m2.insert("d".to_string(), JsonValue::JsonString("hé".to_string()));
+    m2.insert(
+        "e".to_string(),
+        JsonValue::Array({
+            let mut v = Vec::new();
+            v.push(JsonValue::Number(1.0));
+            v.push(JsonValue::Number(2.0));
+            v
+        }),
+    );
+    let expected_mixed = JsonValue::Object(m2);
+
+    let cases = [
+        (r#"{}"#, expected_empty),
+        (r#"{ "a" : 1 }"#, expected_one),
+        (r#"{ "a":1, "b":true, "c":null, "d":"hé", "e":[1,2] }"#, expected_mixed),
+    ];
+
+    for (case, expected) in cases {
+        assert_ok_eq(case, expected);
+    }
+}
+
+#[test]
+fn object_degenerate_should_fail() {
+    let cases = [
+        r#"{"#,                 // unterminated
+        r#"}"#,                 // stray close
+        r#"{{}}"#,              // extra open
+        r#"{,}"#,               // leading comma
+        r#"{,"a":1}"#,          // leading comma (alt)
+        r#"{"a":1,}"#,          // trailing comma
+        r#"{"a":}"#,            // missing value
+        r#"{"a" 1}"#,           // missing colon
+        r#"{"a":1 "b":2}"#,     // missing comma between pairs
+        r#"{"a":1,, "b":2}"#,   // double comma
+        r#"{a:1}"#,             // key not quoted
+        r#"{"a":1, b:2}"#,      // key not quoted (second)
+        r#"{"a": [1,]}"#,       // invalid array value (trailing comma)
+        r#"{"a": "x"#,          // unterminated string
+        r#"{"a":1"#,            // missing closing brace
+        r#"{"a":1, "b":2"#,     // missing closing brace
+        r#"{"a":1:2}"#,         // extra colon
+        r#"{"a""b":1}"#,        // missing colon between key and key
+    ];
+
+    for case in cases {
+        let res = process_json_string(case);
+        assert!(
+            matches!(res, Err(JsonParsingError::InvalidJsonFile) | Err(JsonParsingError::InvalidJsonObject) | Err(JsonParsingError::InvalidArray)),
             "input was: {:?}, got: {:?}",
             case,
             res

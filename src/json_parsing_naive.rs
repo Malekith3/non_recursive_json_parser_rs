@@ -1,14 +1,12 @@
-use std::collections::HashMap;
 use std::str::from_utf8;
 use std::string::String;
-use crate::json_parsing::JsonParsingError::InvalidArray;
-use crate::json_parsing::JsonValue::JsonString;
+use indexmap::IndexMap;
 
 const HEX_ASCI_OFFSET_CAP: u8 = 0x41;
 const HEX_ASCI_OFFSET_LOW: u8 = 0x61;
 const HEX_ASCI_OFFSET_NUM: u8 = 0x30;
 
-pub(crate) fn process_json_file(json_string: &str) -> Result<JsonValue, JsonParsingError> {
+pub(crate) fn process_json_string(json_string: &str) -> Result<JsonValue, JsonParsingError> {
     if json_string.is_empty() {
         return Err(JsonParsingError::EmptyJsonFile);
     }
@@ -21,11 +19,10 @@ pub(crate) fn process_json_file(json_string: &str) -> Result<JsonValue, JsonPars
         return Err(JsonParsingError::InvalidJsonFile);
     }
 
-    let result = parse_json_value(json_string, &mut json_index);
-
+    let result = parse_json_value(json_string, &mut json_index)?;
     trim_spaces(json_string, &mut json_index);
 
-    result
+    Ok(result)
 }
 fn parse_json_value(
     json_string: &str,
@@ -57,11 +54,93 @@ fn parse_json_object(
     let bytes = json_string.as_bytes();
 
     if *current_index >= bytes.len() {
-        return Err(JsonParsingError::InvalidJsonFile);
+        return Err(JsonParsingError::InvalidJsonObject);
+    }
+    let mut expecting_colum = false;
+    let mut expecting_string = true;
+    let mut expecting_value = false;
+    let mut expecting_coma = false;
+    let mut out_json_object: IndexMap<String, JsonValue> = IndexMap::new();
+    let mut current_key_str: String = String::new();
+
+    trim_spaces(json_string, current_index);
+
+    // empty array: []
+    if *current_index < bytes.len() && bytes[*current_index] == b'}' {
+        *current_index += 1;
+        return Ok(JsonValue::Object(out_json_object));
     }
 
-    let mut out_json_object: HashMap<String, JsonValue> = HashMap::new();
-    return Ok(JsonValue::Object(out_json_object));
+    while *current_index < bytes.len() {
+        trim_spaces(json_string, current_index);
+
+        if *current_index >= bytes.len() {
+            return Err(JsonParsingError::InvalidJsonObject);
+        }
+
+        match bytes[*current_index] {
+            b'}' => {
+                if  !expecting_coma {
+                    return Err(JsonParsingError::InvalidJsonObject);
+                }
+                *current_index += 1;
+                return Ok(JsonValue::Object(out_json_object));
+            }
+            b'\"' => {
+                if !expecting_string  && !expecting_value{
+                    return Err(JsonParsingError::InvalidJsonObject);
+                }
+
+                if expecting_string {
+                    let key_value = parse_string(json_string, current_index)?;
+                    let key = match key_value {
+                        JsonValue::JsonString(s) => s,
+                        _ => return Err(JsonParsingError::InvalidJsonObject),
+                    };
+                    current_key_str = key;
+                    expecting_string = false;
+                    expecting_colum = true;
+                    continue;
+                }
+
+                if expecting_value {
+                    let v = parse_json_value(json_string, current_index)?;
+                    out_json_object.insert(current_key_str.to_string(),v);
+                    expecting_value = false;
+                    expecting_coma = true;
+                }
+
+            }
+            b':' => {
+                if !expecting_colum {
+                    return Err(JsonParsingError::InvalidJsonObject);
+                }
+                *current_index += 1;
+                expecting_value = true;
+                expecting_colum = false;
+            }
+            b',' => {
+                if !expecting_coma {
+                    return Err(JsonParsingError::InvalidJsonObject);
+                }
+                *current_index += 1;
+                expecting_string = true;
+                expecting_coma = false;
+            }
+            _ => {
+                if !expecting_value {
+                    return Err(JsonParsingError::InvalidJsonObject);
+                }
+                let v = parse_json_value(json_string, current_index)?;
+                out_json_object.insert(current_key_str.to_string(),v);
+                expecting_value = false;
+                expecting_coma = true;
+            }
+        }
+    }
+
+
+    Err(JsonParsingError::InvalidJsonObject)
 }
 
 fn parse_array(
@@ -135,7 +214,7 @@ fn consume_unicode(bytes_stream: &[u8],
 
     // Gather
     for i in 0..4 {
-        if (*current_index >= bytes_stream.len()) {
+        if *current_index >= bytes_stream.len() {
             return Err(JsonParsingError::InvalidUnicodeInString);
         }
 
@@ -364,7 +443,7 @@ fn parse_number(
         }
     }
 
-    if (need_frac_digit || need_exp_digit) {
+    if need_frac_digit || need_exp_digit {
         return Err(JsonParsingError::InvalidJsonFile);
     }
 
@@ -403,7 +482,7 @@ fn parse_null(json_string: &str, current_index: &mut usize) -> Result<JsonValue,
 }
 
 fn is_delimiter(b: u8) -> bool {
-    matches!(b, b' ' | b'\n' | b'\r' | b'\t' | b',' | b']' | b'}')
+    matches!(b, b' ' | b'\n' | b'\r' | b'\t' | b',' | b']' | b'}' | b':')
 }
 fn parse_bool(json_string: &str, current_index: &mut usize) -> Result<JsonValue, JsonParsingError> {
     const TRUE_BYTES: &[u8] = b"true";
@@ -473,12 +552,13 @@ pub(crate) enum JsonParsingError {
     InvalidJsonFile,
     LeadingZero,
     InvalidUnicodeInString,
-    InvalidArray
+    InvalidArray,
+    InvalidJsonObject
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsonValue {
-    Object(HashMap<String, JsonValue>),
+    Object(IndexMap<String, JsonValue>),
     Array(Vec<JsonValue>),
     JsonString(String),
     Number(f64),

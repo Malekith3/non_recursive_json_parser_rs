@@ -1,4 +1,4 @@
-mod json_parsing;
+mod json_parsing_naive;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -58,5 +58,8 @@ fn main() {
             return;
         }
     };
+    
+    let result = json_parsing_naive::process_json_string(&*json_string);
+    println!("{:?}", result.unwrap())
 
 }
