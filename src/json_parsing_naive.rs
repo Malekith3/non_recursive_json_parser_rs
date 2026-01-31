@@ -22,6 +22,10 @@ pub(crate) fn process_json_string(json_string: &str) -> Result<JsonValue, JsonPa
     let result = parse_json_value(json_string, &mut json_index)?;
     trim_spaces(json_string, &mut json_index);
 
+    if json_index != json_string.len() {
+        return Err(JsonParsingError::InvalidJsonFile);
+    }
+
     Ok(result)
 }
 fn parse_json_value(

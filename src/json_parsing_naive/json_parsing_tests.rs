@@ -419,3 +419,27 @@ fn object_degenerate_should_fail() {
         );
     }
 }
+
+#[test]
+fn trailing_garbage_should_fail() {
+    let cases = [
+        r#"null x"#,
+        r#"true false"#,
+        r#"123 abc"#,
+        r#""ok" "no""#,
+        r#"{}[]"#,
+        r#"[]{}"#,
+        r#"{ "a": 1 } { "b": 2 }"#,
+        r#"[1,2] trailing"#,
+    ];
+
+    for case in cases {
+        let res = process_json_string(case);
+        assert!(
+            matches!(res, Err(JsonParsingError::InvalidJsonFile)),
+            "input was: {:?}, got: {:?}",
+            case,
+            res
+        );
+    }
+}

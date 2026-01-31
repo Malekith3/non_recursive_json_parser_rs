@@ -3,13 +3,12 @@ mod json_parsing_naive;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::env;
+use std::fmt;
 
 enum ArgError {
     MissingPath,
     TooManyArgs,
 }
-
-use std::fmt;
 
 impl fmt::Display for ArgError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -59,7 +58,14 @@ fn main() {
         }
     };
     
-    let result = json_parsing_naive::process_json_string(&*json_string);
-    println!("{:?}", result.unwrap())
+    match json_parsing_naive::process_json_string(&*json_string) {
+        Ok(json_value) => {
+            print!("{:?}", json_value);
+        }
+        Err(json_parsing_error) => {
+            println!("Error parsing JSON: {:?}", json_parsing_error);
+            return;
+        }
+    };
 
 }
