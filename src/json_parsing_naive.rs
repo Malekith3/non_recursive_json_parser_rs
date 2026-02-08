@@ -1,12 +1,16 @@
 use std::str::from_utf8;
+
 use std::string::String;
 use indexmap::IndexMap;
 
+use crate::json_definitions::{JsonParsingError, JsonValue};
+
 const HEX_ASCI_OFFSET_CAP: u8 = 0x41;
+
 const HEX_ASCI_OFFSET_LOW: u8 = 0x61;
 const HEX_ASCI_OFFSET_NUM: u8 = 0x30;
 
-pub(crate) fn process_json_string(json_string: &str) -> Result<JsonValue, JsonParsingError> {
+pub fn process_json_string(json_string: &str) -> Result<JsonValue, JsonParsingError> {
     if json_string.is_empty() {
         return Err(JsonParsingError::EmptyJsonFile);
     }
@@ -550,25 +554,4 @@ fn trim_spaces(json_string: &str, current_index: &mut usize) {
         }
     }
 }
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum JsonParsingError {
-    EmptyJsonFile,
-    InvalidJsonFile,
-    LeadingZero,
-    InvalidUnicodeInString,
-    InvalidArray,
-    InvalidJsonObject
-}
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum JsonValue {
-    Object(IndexMap<String, JsonValue>),
-    Array(Vec<JsonValue>),
-    JsonString(String),
-    Number(f64),
-    Boolean(bool),
-    Null,
-}
-
-#[cfg(test)]
-mod json_parsing_tests;

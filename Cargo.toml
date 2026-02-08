@@ -3,5 +3,9 @@ name = "JSON_parser_rust"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "json_parser_rust"
+path = "src/lib.rs"
+
 [dependencies]
 indexmap = "2"

@@ -1,9 +1,9 @@
-mod json_parsing_naive;
-
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::env;
 use std::fmt;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use json_parser_rust::json_parsing_naive;
 
 enum ArgError {
     MissingPath,
@@ -13,23 +13,21 @@ enum ArgError {
 impl fmt::Display for ArgError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ArgError::MissingPath =>
-                write!(f, "Missing path to JSON file"),
-            ArgError::TooManyArgs =>
-                write!(f, "Too many arguments"),
+            ArgError::MissingPath => write!(f, "Missing path to JSON file"),
+            ArgError::TooManyArgs => write!(f, "Too many arguments"),
         }
     }
 }
 
 fn read_json_file(path_to_json_file: &Path) -> Result<String, std::io::Error> {
-     fs::read_to_string(path_to_json_file)
+    fs::read_to_string(path_to_json_file)
 }
 
-fn parse_args( args: &[String]) -> Result<PathBuf, ArgError>{
+fn parse_args(args: &[String]) -> Result<PathBuf, ArgError> {
     match args.len() {
         2 => Ok(PathBuf::from(args[1].clone())),
         1 => Err(ArgError::MissingPath),
-        _ => Err(ArgError::TooManyArgs)
+        _ => Err(ArgError::TooManyArgs),
     }
 }
 
@@ -57,15 +55,13 @@ fn main() {
             return;
         }
     };
-    
-    match json_parsing_naive::process_json_string(&*json_string) {
+
+    match json_parsing_naive::process_json_string(&json_string) {
         Ok(json_value) => {
             print!("{:?}", json_value);
         }
         Err(json_parsing_error) => {
             println!("Error parsing JSON: {:?}", json_parsing_error);
-            return;
         }
     };
-
 }
