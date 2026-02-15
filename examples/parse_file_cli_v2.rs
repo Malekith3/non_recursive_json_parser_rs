@@ -3,8 +3,8 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-// Example: naive recursive parser (v1)
-use json_parser_rust::json_parsing_naive;
+// Example: lexer + recursive parser (v2)
+use json_parser_rust::json_lexer_parser::process_json_string_v2;
 
 enum ArgError {
     MissingPath,
@@ -40,7 +40,7 @@ fn print_usage(error: &ArgError) {
 fn main() {
     println!("Welcome to JSON parser");
     println!("======================");
-    println!("Parser: v1 naive (recursive descent)");
+    println!("Parser: v2 lexer + recursive descent");
     let args: Vec<String> = env::args().collect();
     let path = match parse_args(&args) {
         Ok(path) => path,
@@ -58,7 +58,7 @@ fn main() {
         }
     };
 
-    match json_parsing_naive::process_json_string_v1(&json_string) {
+    match process_json_string_v2(&json_string) {
         Ok(json_value) => {
             print!("{:?}", json_value);
         }

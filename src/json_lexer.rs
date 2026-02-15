@@ -1,4 +1,6 @@
+use std::collections::VecDeque;
 use std::str::from_utf8;
+use crate::json_definitions::LexerError;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
@@ -21,6 +23,7 @@ pub enum TokenKind {
 }
 
 #[derive(Debug, PartialEq)]
+#[derive(Clone)]
 pub enum NumberError {
     Empty,                 // nothing after '-' or no digits
     LeadingZero,           // "01"
@@ -31,7 +34,7 @@ pub enum NumberError {
     NonFinite,             // parsed to inf/nan (policy choice)
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum StringError {
     Unterminated,                 // hit EOF before closing quote
     InvalidEscape { found: u8 },  // e.g. "\x"
@@ -40,25 +43,6 @@ pub enum StringError {
     InvalidUtf8,                  // if you decide to validate input bytes in strings
     InvalidUnicodeEscape,         // "\u" not followed by 4 hex
     SurrogateNotAllowed,          // D800–DFFF
-}
-
-#[derive(Debug, PartialEq)]
-pub enum LexerError {
-    /// Cursor ended up past the input length (should be rare, but you want runtime error)
-    CursorOutOfBounds { cursor: usize, len: usize },
-
-    /// Ran out of input while trying to consume something specific (e.g. "true")
-    UnexpectedEof { at: usize, expected: &'static str },
-
-    /// Current byte can't start any token (or a specific byte was expected)
-    UnexpectedByte { at: usize, found: u8, expected: &'static str },
-
-    /// The bytes at `at` did not match the expected literal (e.g. "true")
-    InvalidLiteral { at: usize, expected: &'static str },
-
-    InvalidString { at: usize, reason: StringError },
-
-    InvalidNumber { at: usize, reason: NumberError },
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -73,14 +57,14 @@ pub struct Token {
     pub span: Span,
 }
 
-pub fn lex_all(input: &[u8]) -> Result<Vec<Token>, LexerError> {
+pub fn lex_all(input: &[u8]) -> Result<VecDeque<Token>, LexerError> {
     let mut cursor = 0;
-    let mut tokens = Vec::new();
+    let mut tokens = VecDeque::new();
 
     loop {
         let tok = next_token(input, &mut cursor)?;
         let is_eof = matches!(tok.kind, TokenKind::Eof);
-        tokens.push(tok);
+        tokens.push_back(tok);
         if is_eof { break; }
     }
 

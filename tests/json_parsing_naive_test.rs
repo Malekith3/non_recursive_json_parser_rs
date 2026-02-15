@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 
 use json_parser_rust::json_definitions::{JsonParsingError, JsonValue};
-use json_parser_rust::json_parsing_naive::process_json_string;
+use json_parser_rust::json_parsing_naive::process_json_string_v1;
 
 fn char_from_hex(s: &str) -> Option<char> {
     let hex = s.trim_start_matches("0x");
@@ -9,14 +9,14 @@ fn char_from_hex(s: &str) -> Option<char> {
 }
 
 fn assert_ok_eq(input: &str, expected: JsonValue) {
-    match process_json_string(input) {
+    match process_json_string_v1(input) {
         Ok(value) => assert_eq!(value, expected, "input was: {:?}", input),
         Err(err) => panic!("expected Ok, got Err: {:?} for input: {:?}", err, input),
     }
 }
 
 fn assert_err_eq(input: &str, expected: JsonParsingError) {
-    match process_json_string(input) {
+    match process_json_string_v1(input) {
         Ok(value) => panic!(
             "expected Err {:?}, got Ok: {:?} for input: {:?}",
             expected, value, input
@@ -162,7 +162,7 @@ mod numbers {
 
 mod strings {
     use super::{
-        assert_err_eq, assert_ok_eq, char_from_hex, JsonParsingError, JsonValue, process_json_string,
+        assert_err_eq, assert_ok_eq, char_from_hex, JsonParsingError, JsonValue, process_json_string_v1,
     };
 
     mod pos {
@@ -263,7 +263,7 @@ mod strings {
     }
 
     mod neg {
-        use super::{assert_err_eq, char_from_hex, JsonParsingError, JsonValue, process_json_string};
+        use super::{assert_err_eq, char_from_hex, JsonParsingError, JsonValue, process_json_string_v1};
 
         #[test]
         fn escape_string_fail() {
@@ -307,7 +307,7 @@ mod strings {
             ];
 
             for case in cases {
-                let res = process_json_string(case);
+                let res = process_json_string_v1(case);
                 assert!(
                     matches!(
                         res,
@@ -324,7 +324,7 @@ mod strings {
 }
 
 mod arrays {
-    use super::{assert_ok_eq, JsonParsingError, JsonValue, process_json_string};
+    use super::{assert_ok_eq, JsonParsingError, JsonValue, process_json_string_v1};
 
     mod pos {
         use super::{assert_ok_eq, JsonValue};
@@ -375,7 +375,7 @@ mod arrays {
     }
 
     mod neg {
-        use super::{JsonParsingError, process_json_string};
+        use super::{JsonParsingError, process_json_string_v1};
 
         #[test]
         fn arrays_malformed_should_fail() {
@@ -394,7 +394,7 @@ mod arrays {
             ];
 
             for case in cases {
-                let res = process_json_string(case);
+                let res = process_json_string_v1(case);
                 assert!(
                     matches!(
                         res,
@@ -410,7 +410,7 @@ mod arrays {
 }
 
 mod objects {
-    use super::{IndexMap, JsonParsingError, JsonValue, assert_ok_eq, process_json_string};
+    use super::{IndexMap, JsonParsingError, JsonValue, assert_ok_eq, process_json_string_v1};
 
     mod pos {
         use super::{assert_ok_eq, IndexMap, JsonValue};
@@ -458,7 +458,7 @@ mod objects {
     }
 
     mod neg {
-        use super::{JsonParsingError, process_json_string};
+        use super::{JsonParsingError, process_json_string_v1};
 
         #[test]
         fn object_degenerate_should_fail() {
@@ -484,7 +484,7 @@ mod objects {
             ];
 
             for case in cases {
-                let res = process_json_string(case);
+                let res = process_json_string_v1(case);
                 assert!(
                     matches!(
                         res,
@@ -502,7 +502,7 @@ mod objects {
 }
 
 mod trailing_garbage {
-    use super::{JsonParsingError, process_json_string};
+    use super::{JsonParsingError, process_json_string_v1};
 
     #[test]
     fn trailing_garbage_should_fail() {
@@ -518,7 +518,7 @@ mod trailing_garbage {
         ];
 
         for case in cases {
-            let res = process_json_string(case);
+            let res = process_json_string_v1(case);
             assert!(
                 matches!(res, Err(JsonParsingError::InvalidJsonFile)),
                 "input was: {:?}, got: {:?}",

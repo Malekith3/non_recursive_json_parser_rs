@@ -10,7 +10,7 @@ const HEX_ASCI_OFFSET_CAP: u8 = 0x41;
 const HEX_ASCI_OFFSET_LOW: u8 = 0x61;
 const HEX_ASCI_OFFSET_NUM: u8 = 0x30;
 
-pub fn process_json_string(json_string: &str) -> Result<JsonValue, JsonParsingError> {
+pub fn process_json_string_v1(json_string: &str) -> Result<JsonValue, JsonParsingError> {
     if json_string.is_empty() {
         return Err(JsonParsingError::EmptyJsonFile);
     }

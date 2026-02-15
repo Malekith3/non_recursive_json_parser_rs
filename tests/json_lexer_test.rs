@@ -1,6 +1,8 @@
 use json_parser_rust::json_lexer::{
-    lex_all, LexerError, NumberError, StringError, TokenKind,
+    lex_all, NumberError, StringError, TokenKind,
 };
+
+use json_parser_rust::json_definitions::LexerError;
 
 mod punctuation {
     use super::{lex_all, LexerError, TokenKind};
@@ -124,6 +126,24 @@ mod literals {
                     TokenKind::Bool(false),
                     TokenKind::Comma,
                     TokenKind::Null,
+                    TokenKind::RBracket,
+                    TokenKind::Eof
+                ]
+            );
+        }
+
+        #[test]
+        fn numbers_without_commas_are_lexed() {
+            let input = b"[1 2]";
+            let tokens = lex_all(input).expect("lex_all should succeed for lexer-only test");
+
+            let kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
+            assert_eq!(
+                kinds,
+                vec![
+                    TokenKind::LBracket,
+                    TokenKind::Number(1.0),
+                    TokenKind::Number(2.0),
                     TokenKind::RBracket,
                     TokenKind::Eof
                 ]
@@ -390,5 +410,23 @@ mod numbers {
                 }
             );
         }
+    }
+}
+
+mod complex_exceptions {
+    use super::{lex_all, LexerError};
+
+    #[test]
+    fn unquoted_object_key_should_fail() {
+        let input = br#"{a:1}"#;
+        let err = lex_all(input).unwrap_err();
+        assert_eq!(
+            err,
+            LexerError::UnexpectedByte {
+                at: 1,
+                found: b'a',
+                expected: "token"
+            }
+        );
     }
 }
