@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 
-use json_parser_rust::json_definitions::{JsonParsingError, JsonValue, LexerError};
+use json_parser_rust::json_definitions::{JsonParsingErrorV2, JsonValue, LexerError};
 use json_parser_rust::json_lexer::{NumberError, StringError};
 use json_parser_rust::json_lexer_parser::process_json_string_v2;
 
@@ -13,16 +13,16 @@ fn assert_ok_eq(input: &str, expected: JsonValue) {
 
 fn assert_err_matches<F>(input: &str, check: F)
 where
-    F: FnOnce(JsonParsingError) -> bool,
+    F: FnOnce(JsonParsingErrorV2) -> bool,
 {
     match process_json_string_v2(input) {
         Ok(value) => panic!("expected Err, got Ok: {:?} for input: {:?}", value, input),
-        Err(err) => assert!(check(err), "input was: {:?}", input),
+        Err(err) => assert!(check(err.clone()), "input was: {:?}, err was: {:?}", input, err),
     }
 }
 
 mod nulls {
-    use super::{assert_err_matches, assert_ok_eq, JsonParsingError, JsonValue, LexerError};
+    use super::{assert_err_matches, assert_ok_eq, JsonParsingErrorV2, JsonValue, LexerError};
 
     mod pos {
         use super::{assert_ok_eq, JsonValue};
@@ -37,22 +37,22 @@ mod nulls {
     }
 
     mod neg {
-        use super::{assert_err_matches, JsonParsingError, LexerError};
+        use super::{assert_err_matches, JsonParsingErrorV2, LexerError};
 
         #[test]
         fn parse_null_typos_fail() {
             assert_err_matches("nul", |e| {
-                matches!(e, JsonParsingError::LexError(LexerError::UnexpectedEof { expected: "null", .. }))
+                matches!(e, JsonParsingErrorV2::LexError(LexerError::UnexpectedEof { expected: "null", .. }))
             });
             assert_err_matches("nullx", |e| {
-                matches!(e, JsonParsingError::LexError(LexerError::UnexpectedByte { expected: "token", .. }))
+                matches!(e, JsonParsingErrorV2::LexError(LexerError::UnexpectedByte { expected: "token", .. }))
             });
         }
     }
 }
 
 mod bools {
-    use super::{assert_err_matches, assert_ok_eq, JsonParsingError, JsonValue, LexerError};
+    use super::{assert_err_matches, assert_ok_eq, JsonParsingErrorV2, JsonValue, LexerError};
 
     mod pos {
         use super::{assert_ok_eq, JsonValue};
@@ -65,18 +65,18 @@ mod bools {
     }
 
     mod neg {
-        use super::{assert_err_matches, JsonParsingError, LexerError};
+        use super::{assert_err_matches, JsonParsingErrorV2, LexerError};
 
         #[test]
         fn parse_bool_typos_fail() {
             assert_err_matches("tru", |e| {
-                matches!(e, JsonParsingError::LexError(LexerError::UnexpectedEof { expected: "true", .. }))
+                matches!(e, JsonParsingErrorV2::LexError(LexerError::UnexpectedEof { expected: "true", .. }))
             });
             assert_err_matches("fals", |e| {
-                matches!(e, JsonParsingError::LexError(LexerError::UnexpectedEof { expected: "false", .. }))
+                matches!(e, JsonParsingErrorV2::LexError(LexerError::UnexpectedEof { expected: "false", .. }))
             });
             assert_err_matches("truex", |e| {
-                matches!(e, JsonParsingError::LexError(LexerError::UnexpectedByte { expected: "token", .. }))
+                matches!(e, JsonParsingErrorV2::LexError(LexerError::UnexpectedByte { expected: "token", .. }))
             });
         }
     }
@@ -84,7 +84,7 @@ mod bools {
 
 mod strings {
     use super::{
-        assert_err_matches, assert_ok_eq, JsonParsingError, JsonValue, LexerError, StringError,
+        assert_err_matches, assert_ok_eq, JsonParsingErrorV2, JsonValue, LexerError, StringError,
     };
 
     mod pos {
@@ -105,14 +105,14 @@ mod strings {
     }
 
     mod neg {
-        use super::{assert_err_matches, JsonParsingError, LexerError, StringError};
+        use super::{assert_err_matches, JsonParsingErrorV2, LexerError, StringError};
 
         #[test]
         fn parse_string_fail() {
             assert_err_matches(r#""\q""#, |e| {
                 matches!(
                     e,
-                    JsonParsingError::LexError(LexerError::InvalidString {
+                    JsonParsingErrorV2::LexError(LexerError::InvalidString {
                         reason: StringError::InvalidEscape { .. },
                         ..
                     })
@@ -121,7 +121,7 @@ mod strings {
             assert_err_matches(r#""\u12X4""#, |e| {
                 matches!(
                     e,
-                    JsonParsingError::LexError(LexerError::InvalidString {
+                    JsonParsingErrorV2::LexError(LexerError::InvalidString {
                         reason: StringError::InvalidUnicodeEscape,
                         ..
                     })
@@ -130,7 +130,7 @@ mod strings {
             assert_err_matches(r#""abc"#, |e| {
                 matches!(
                     e,
-                    JsonParsingError::LexError(LexerError::InvalidString {
+                    JsonParsingErrorV2::LexError(LexerError::InvalidString {
                         reason: StringError::Unterminated,
                         ..
                     })
@@ -142,7 +142,7 @@ mod strings {
 
 mod numbers {
     use super::{
-        assert_err_matches, assert_ok_eq, JsonParsingError, JsonValue, LexerError, NumberError,
+        assert_err_matches, assert_ok_eq, JsonParsingErrorV2, JsonValue, LexerError, NumberError,
     };
 
     mod pos {
@@ -165,14 +165,14 @@ mod numbers {
     }
 
     mod neg {
-        use super::{assert_err_matches, JsonParsingError, LexerError, NumberError};
+        use super::{assert_err_matches, JsonParsingErrorV2, LexerError, NumberError};
 
         #[test]
         fn parse_number_fail() {
             assert_err_matches("01", |e| {
                 matches!(
                     e,
-                    JsonParsingError::LexError(LexerError::InvalidNumber {
+                    JsonParsingErrorV2::LexError(LexerError::InvalidNumber {
                         reason: NumberError::LeadingZero,
                         ..
                     })
@@ -181,7 +181,7 @@ mod numbers {
             assert_err_matches("1.", |e| {
                 matches!(
                     e,
-                    JsonParsingError::LexError(LexerError::InvalidNumber {
+                    JsonParsingErrorV2::LexError(LexerError::InvalidNumber {
                         reason: NumberError::MissingFracDigit,
                         ..
                     })
@@ -190,7 +190,7 @@ mod numbers {
             assert_err_matches("1e", |e| {
                 matches!(
                     e,
-                    JsonParsingError::LexError(LexerError::InvalidNumber {
+                    JsonParsingErrorV2::LexError(LexerError::InvalidNumber {
                         reason: NumberError::MissingExpDigit,
                         ..
                     })
@@ -201,7 +201,7 @@ mod numbers {
 }
 
 mod arrays {
-    use super::{assert_err_matches, assert_ok_eq, JsonParsingError, JsonValue};
+    use super::{assert_err_matches, assert_ok_eq, JsonParsingErrorV2, JsonValue};
 
     mod pos {
         use super::{assert_ok_eq, JsonValue};
@@ -256,7 +256,7 @@ mod arrays {
     }
 
     mod neg {
-        use super::{assert_err_matches, JsonParsingError};
+        use super::{assert_err_matches, JsonParsingErrorV2};
 
         #[test]
         fn parse_array_fail_more() {
@@ -274,10 +274,12 @@ mod arrays {
                 assert_err_matches(case, |e| {
                     matches!(
                         e,
-                        JsonParsingError::InvalidJsonFile
-                            | JsonParsingError::InvalidArray
-                            | JsonParsingError::UnexpectedEOF
-                            | JsonParsingError::LexError(_)
+                        JsonParsingErrorV2::InvalidJsonObject { .. }
+                            | JsonParsingErrorV2::InvalidArray { .. }
+                            | JsonParsingErrorV2::UnexpectedEOF { .. }
+                            | JsonParsingErrorV2::ExpectedEOF { .. }
+                            | JsonParsingErrorV2::UnexpectedToken { .. }
+                            | JsonParsingErrorV2::LexError(_)
                     )
                 });
             }
@@ -295,19 +297,28 @@ mod arrays {
                 assert_err_matches(case, |e| {
                     matches!(
                         e,
-                        JsonParsingError::InvalidJsonFile
-                            | JsonParsingError::InvalidArray
-                            | JsonParsingError::UnexpectedEOF
-                            | JsonParsingError::LexError(_)
+                        JsonParsingErrorV2::InvalidJsonObject { .. }
+                            | JsonParsingErrorV2::InvalidArray { .. }
+                            | JsonParsingErrorV2::UnexpectedEOF { .. }
+                            | JsonParsingErrorV2::ExpectedEOF { .. }
+                            | JsonParsingErrorV2::UnexpectedToken { .. }
+                            | JsonParsingErrorV2::LexError(_)
                     )
                 });
             }
+        }
+
+        #[test]
+        fn parse_array_unexpected_eof_reports_cursor() {
+            assert_err_matches(r#"[1,"#, |e| {
+                matches!(e, JsonParsingErrorV2::UnexpectedEOF { at: Some(3) })
+            });
         }
     }
 }
 
 mod objects {
-    use super::{assert_err_matches, assert_ok_eq, IndexMap, JsonParsingError, JsonValue};
+    use super::{assert_err_matches, assert_ok_eq, IndexMap, JsonParsingErrorV2, JsonValue};
 
     mod pos {
         use super::{assert_ok_eq, IndexMap, JsonValue};
@@ -338,7 +349,7 @@ mod objects {
     }
 
     mod neg {
-        use super::{assert_err_matches, JsonParsingError};
+        use super::{assert_err_matches, JsonParsingErrorV2};
 
         #[test]
         fn parse_object_fail() {
@@ -355,13 +366,22 @@ mod objects {
                 assert_err_matches(case, |e| {
                     matches!(
                         e,
-                        JsonParsingError::InvalidJsonFile
-                            | JsonParsingError::InvalidJsonObject
-                            | JsonParsingError::UnexpectedEOF
-                            | JsonParsingError::LexError(_)
+                        JsonParsingErrorV2::InvalidJsonObject { .. }
+                            | JsonParsingErrorV2::InvalidArray { .. }
+                            | JsonParsingErrorV2::UnexpectedEOF { .. }
+                            | JsonParsingErrorV2::ExpectedEOF { .. }
+                            | JsonParsingErrorV2::UnexpectedToken { .. }
+                            | JsonParsingErrorV2::LexError(_)
                     )
                 });
             }
+        }
+
+        #[test]
+        fn parse_object_unexpected_eof_reports_cursor() {
+            assert_err_matches(r#"{"#, |e| {
+                matches!(e, JsonParsingErrorV2::UnexpectedEOF { at: Some(1) })
+            });
         }
     }
 }
