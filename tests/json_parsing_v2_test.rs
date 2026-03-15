@@ -311,7 +311,7 @@ mod arrays {
         #[test]
         fn parse_array_unexpected_eof_reports_cursor() {
             assert_err_matches(r#"[1,"#, |e| {
-                matches!(e, JsonParsingErrorV2::UnexpectedEOF { at: Some(3) })
+                matches!(e, JsonParsingErrorV2::UnexpectedEOF { at: 3 })
             });
         }
     }
@@ -380,7 +380,7 @@ mod objects {
         #[test]
         fn parse_object_unexpected_eof_reports_cursor() {
             assert_err_matches(r#"{"#, |e| {
-                matches!(e, JsonParsingErrorV2::UnexpectedEOF { at: Some(1) })
+                matches!(e, JsonParsingErrorV2::UnexpectedEOF { at: 1 })
             });
         }
     }

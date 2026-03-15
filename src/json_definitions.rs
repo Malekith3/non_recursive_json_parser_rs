@@ -1,5 +1,6 @@
 use indexmap::IndexMap;
 use crate::json_lexer::{NumberError, StringError, TokenKind};
+use Option;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsonParsingError {
@@ -19,7 +20,7 @@ pub enum TokenTag {
 }
 
 pub fn token_tag_of(k: &TokenKind) -> TokenTag {
-    match k {
+    return match k {
         TokenKind::LBrace => TokenTag::LBrace,
         TokenKind::RBrace => TokenTag::RBrace,
         TokenKind::LBracket => TokenTag::LBracket,
@@ -38,7 +39,7 @@ pub fn token_tag_of(k: &TokenKind) -> TokenTag {
 pub enum JsonParsingErrorV2 {
     EmptyJsonFile,
 
-    UnexpectedEOF { at: Option<usize> },
+    UnexpectedEOF { at: usize },
 
     ExpectedEOF { found: TokenTag, at: Option<usize> },
 
@@ -47,6 +48,64 @@ pub enum JsonParsingErrorV2 {
     InvalidArray { found: TokenTag, at: Option<usize> },
     InvalidJsonObject { found: TokenTag, at: Option<usize> },
 
+    LexError(LexerError),
+}
+
+
+// =============================================================================
+// V3 PARSER ERROR
+// =============================================================================
+// Design principles vs v2:
+//   - Every error carries `at: usize` (byte offset) for source location
+//   - Errors that involve a token carry `found: TokenTag`
+//   - Errors that involve frame state carry `frame: FrameTypeTag`
+//   - TODO next session: upgrade `at: usize` to `at: SourceLocation`
+//     once lexer Span is extended to track line + column (easy upgrade)
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum JsonParsingErrorV3 {
+    // Input was empty before lexing even started.
+    // Same as v2 — no extra context needed.
+    EmptyJsonFile,
+
+    // Ran out of tokens while still inside a structure.
+    // TODO: add `at: usize` — byte offset where EOF was hit
+    // TODO: add `frame: FrameTypeTag` — which frame was open when EOF hit
+    // Example: parsing {"a": [1,2 and then nothing
+    UnexpectedEOF,
+
+    // Parsing completed successfully but there are leftover tokens after the root value.
+    // TODO: add `at: usize`
+    // TODO: add `found: TokenTag` — the unexpected token that followed the root value
+    ExpectedEOF,
+
+    // A closing token didn't match the open frame.
+    // Example: opened with '[' but saw '}' — mismatch
+    // TODO: add `at: usize`
+    // TODO: add `found: TokenTag` — the closing token we got (e.g. RBrace)
+    // TODO: add `frame: FrameTypeTag` — the frame that was open (e.g. ArrayFrame)
+    MismatchedClosing,
+
+    // A closing token arrived but the stack was empty — nothing to close.
+    // Example: "1, 2]" — the ] has no matching [
+    // TODO: add `at: usize`
+    // TODO: add `found: TokenTag` — the unexpected closing token
+    UnexpectedClosing,
+
+    // Inside an object, got a non-string value where a key was expected.
+    // pending_key was None but the incoming value wasn't a JsonString.
+    // Example: { 1: "value" } — 1 is not a valid key
+    // TODO: add `at: usize`
+    // TODO: add `found: TokenTag` — the token that was not a string
+    ObjectKeyNotString,
+
+    // Got '}' while pending_key is Some — key was parsed but value never came.
+    // Example: { "a": } — key "a" consumed, colon consumed, but } arrived
+    // TODO: add `at: usize`
+    // TODO: add `found: String` — the key that was left hanging (useful for debugging)
+    ObjectKeyWithoutValue,
+
+    // Lexer failed — bubble it up unchanged, same as v2.
     LexError(LexerError),
 }
 
@@ -77,4 +136,28 @@ pub enum LexerError {
     InvalidString { at: usize, reason: StringError },
 
     InvalidNumber { at: usize, reason: NumberError },
+}
+
+pub enum FrameTypeTag{
+    ObjectFrame,
+    ArrayFrame
+}
+fn frame_tag_type(frame: &JsonFrame) -> FrameTypeTag {
+    return match frame {
+        JsonFrame::ObjectFrameType(_) => { FrameTypeTag::ObjectFrame},
+        JsonFrame::ArrayFrameType(_) => { FrameTypeTag::ArrayFrame}
+    }
+}
+pub enum JsonFrame{
+    ObjectFrameType(ObjectFrame),
+    ArrayFrameType(ArrayFrame)
+}
+
+pub struct ObjectFrame{
+    pending_key : Option<String>,
+    items : IndexMap<String, JsonValue>
+}
+
+pub struct ArrayFrame{
+    items : Vec<JsonValue>
 }

@@ -14,7 +14,7 @@ pub fn process_json_string_v2(json_string: &str) -> Result<JsonValue, JsonParsin
     let json_value = parse_json_value(&mut tokens, &mut cursor)?;
 
     let Some(token) = next_token(&mut tokens, &mut cursor) else {
-        return Err(JsonParsingErrorV2::UnexpectedEOF{at: Some(cursor) })
+        return Err(JsonParsingErrorV2::UnexpectedEOF{at: cursor })
     };
 
     if token.kind != TokenKind::Eof {
@@ -37,7 +37,7 @@ fn next_token(tokens: &mut VecDeque<Token>, cursor: &mut usize) -> Option<Token>
 fn parse_json_value(tokens: &mut VecDeque<Token>, cursor: &mut usize) -> Result<JsonValue, JsonParsingErrorV2> {
 
     let Some(token) = next_token(tokens, cursor) else {
-        return Err(JsonParsingErrorV2::UnexpectedEOF {at: Some(*cursor) })
+        return Err(JsonParsingErrorV2::UnexpectedEOF {at: *cursor })
     };
 
     return match token.kind {
@@ -47,14 +47,14 @@ fn parse_json_value(tokens: &mut VecDeque<Token>, cursor: &mut usize) -> Result<
         TokenKind::Number(n) => Ok(JsonValue::Number(n)),
         TokenKind::LBrace => parse_json_object(tokens, cursor),
         TokenKind::LBracket => parse_json_array(tokens, cursor),
-        TokenKind::Eof => Err(JsonParsingErrorV2::UnexpectedEOF{at:Some(*cursor)}),
+        TokenKind::Eof => Err(JsonParsingErrorV2::UnexpectedEOF{at:*cursor}),
         _ => Err(JsonParsingErrorV2::UnexpectedToken { found: token_tag_of(&token.kind), at: Some(token.span.start) }),
     }
 }
 
 fn parse_json_array(tokens: &mut VecDeque<Token>, cursor: &mut usize) -> Result<JsonValue, JsonParsingErrorV2> {
     let Some(t0) = peek_token(tokens) else {
-        return Err(JsonParsingErrorV2::UnexpectedEOF { at: Some(*cursor) });
+        return Err(JsonParsingErrorV2::UnexpectedEOF { at: *cursor });
     };
 
     if t0.kind == TokenKind::RBracket {
@@ -67,7 +67,7 @@ fn parse_json_array(tokens: &mut VecDeque<Token>, cursor: &mut usize) -> Result<
 
     loop {
         let Some(t) = peek_token(tokens) else {
-            return Err(JsonParsingErrorV2::UnexpectedEOF { at: Some(*cursor) });
+            return Err(JsonParsingErrorV2::UnexpectedEOF { at: *cursor });
         };
 
         match t.kind {
@@ -92,7 +92,7 @@ fn parse_json_object(tokens: &mut VecDeque<Token>, cursor: &mut usize) -> Result
 
     // empty object: "{}"
     let Some(t0) = peek_token(tokens) else {
-        return Err(JsonParsingErrorV2::UnexpectedEOF { at: Some(*cursor) });
+        return Err(JsonParsingErrorV2::UnexpectedEOF { at: *cursor });
     };
 
     if t0.kind == TokenKind::RBrace {
@@ -110,7 +110,7 @@ fn parse_json_object(tokens: &mut VecDeque<Token>, cursor: &mut usize) -> Result
 
     loop {
         let Some(t) = peek_token(tokens) else {
-            return Err(JsonParsingErrorV2::UnexpectedEOF { at: Some(*cursor) });
+            return Err(JsonParsingErrorV2::UnexpectedEOF { at: *cursor });
         };
 
         match &t.kind {
@@ -137,19 +137,19 @@ fn parse_json_object(tokens: &mut VecDeque<Token>, cursor: &mut usize) -> Result
 
 fn parse_object_key(tokens: &mut VecDeque<Token>, cursor: &mut usize) -> Result<String, JsonParsingErrorV2> {
     let Some(t) = next_token(tokens, cursor) else {
-        return Err(JsonParsingErrorV2::UnexpectedEOF { at: Some(*cursor) });
+        return Err(JsonParsingErrorV2::UnexpectedEOF { at: *cursor });
     };
 
     match t.kind {
         TokenKind::String(s) => Ok(s),
-        TokenKind::Eof => Err(JsonParsingErrorV2::UnexpectedEOF { at: Some(*cursor) }),
+        TokenKind::Eof => Err(JsonParsingErrorV2::UnexpectedEOF { at: *cursor }),
         _ => Err(JsonParsingErrorV2::InvalidJsonObject { found: token_tag_of(&t.kind), at: Some(t.span.start) }),
     }
 }
 
 fn consume_kind(tokens: &mut VecDeque<Token>, expected: TokenKind, cursor: &mut usize) -> Result<(), JsonParsingErrorV2> {
     let Some(t) = next_token(tokens, cursor) else {
-        return Err(JsonParsingErrorV2::UnexpectedEOF { at: Some(*cursor) });
+        return Err(JsonParsingErrorV2::UnexpectedEOF { at: *cursor });
     };
 
     if t.kind == expected {
