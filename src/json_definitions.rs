@@ -1,6 +1,5 @@
 use indexmap::IndexMap;
 use crate::json_lexer::{NumberError, StringError, TokenKind};
-use Option;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsonParsingError {
@@ -107,6 +106,9 @@ pub enum JsonParsingErrorV3 {
 
     // Lexer failed — bubble it up unchanged, same as v2.
     LexError(LexerError),
+    
+    ///Duno if i want to surface that to user ... 
+    UneExpectedFrameType
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -138,26 +140,7 @@ pub enum LexerError {
     InvalidNumber { at: usize, reason: NumberError },
 }
 
-pub enum FrameTypeTag{
+pub enum FrameTypeTag {
     ObjectFrame,
-    ArrayFrame
-}
-fn frame_tag_type(frame: &JsonFrame) -> FrameTypeTag {
-    return match frame {
-        JsonFrame::ObjectFrameType(_) => { FrameTypeTag::ObjectFrame},
-        JsonFrame::ArrayFrameType(_) => { FrameTypeTag::ArrayFrame}
-    }
-}
-pub enum JsonFrame{
-    ObjectFrameType(ObjectFrame),
-    ArrayFrameType(ArrayFrame)
-}
-
-pub struct ObjectFrame{
-    pending_key : Option<String>,
-    items : IndexMap<String, JsonValue>
-}
-
-pub struct ArrayFrame{
-    items : Vec<JsonValue>
+    ArrayFrame,
 }
